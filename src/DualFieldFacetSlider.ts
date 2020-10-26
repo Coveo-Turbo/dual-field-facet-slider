@@ -30,7 +30,7 @@ export interface IDualFieldFacetSliderOptions {
     fieldMin: string;
     fieldMax: string;
     title?: string;
-    id?: string;
+    id: string;
     rangeSlider?: boolean;
     delay?: number;
     valueCaption?: any;
@@ -101,8 +101,8 @@ export const MAX_NUMBER_OF_STEPS = 100;
 export class DualFieldFacetSlider extends Component {
     static ID = 'DualFieldFacetSlider';
 
-    private cleanedMinField: string;
-    private cleanedMaxField: string;
+    public cleanedMinField: string;
+    public cleanedMaxField: string;
 
     public startOfSlider: number;
     public endOfSlider: number;
@@ -117,8 +117,8 @@ export class DualFieldFacetSlider extends Component {
     static options: IDualFieldFacetSliderOptions = {
         fieldMin: ComponentOptions.buildStringOption(),
         fieldMax: ComponentOptions.buildStringOption(),
-        title: ComponentOptions.buildStringOption({ defaultValue: "FacetSliderDynamicRange" }),
-        id: ComponentOptions.buildStringOption({ defaultValue: "FacetSliderDynamicRange" }),
+        title: ComponentOptions.buildStringOption({ defaultValue: "DualFieldFacetSlider" }),
+        id: ComponentOptions.buildStringOption({ defaultValue: "DualFieldFacetSlider" }),
         rangeSlider: ComponentOptions.buildBooleanOption({ defaultValue: true }),
         delay: ComponentOptions.buildNumberOption({ defaultValue: 200 }),
         rounded: ComponentOptions.buildNumberOption({ defaultValue: 0 }),
@@ -140,6 +140,7 @@ export class DualFieldFacetSlider extends Component {
         this.cleanedMaxField = this.options.fieldMax.replace('@', '');
 
         // ResponsiveFacetSlider.init(this.root, this, this.options);
+        this.normalizeStartAndEndOptionsValues()
 
         this.bind.onRootElement(QueryEvents.preprocessResults, (args: IPreprocessResultsEventArgs) => this.handlePreprocessResults(args));
 
@@ -150,14 +151,31 @@ export class DualFieldFacetSlider extends Component {
             })
     }
 
+    private normalizeStartAndEndOptionsValues() {
+        if (this.options.start) {
+            this.options.start = <any>Number(this.options.start);
+        }
+
+        if (this.options.end) {
+            this.options.end = <any>Number(this.options.end);
+        }
+    }
+
     public buildDualSlider() {
         this.element.classList.add('CoveoFacetSlider');
 
         this.buildHeader();
-        this.buildSlider();
+
+        this.initSlider();
 
         this.buildHiddenMinMaxSlider();
 
+    }
+
+    private initSlider() {
+        this.buildSlider();
+        this.slider.initializeState([this.startOfSlider, this.endOfSlider]);
+        this.updateAppearanceDependingOnState();
     }
 
     public buildHeader() {
@@ -183,7 +201,7 @@ export class DualFieldFacetSlider extends Component {
 
         this.slider = this.slider
             ? this.slider
-            : new Slider(sliderDiv, { ...this.options, ...{ dateField: null } } as ISliderOptions, this.root);
+            : new Slider(sliderDiv, { ...this.options } as ISliderOptions, this.root);
         $$(sliderDiv).on(SliderEvents.endSlide, (e: MouseEvent, args: IEndSlideEventArgs) => {
             this.handleEndSlide(args);
         });
@@ -200,16 +218,19 @@ export class DualFieldFacetSlider extends Component {
         const values = args.slider.getValues();
         this.startOfSlider = values[0];
         this.endOfSlider = values[1];
-        // if (this.updateQueryState(values)) {
-        //   this.updateAppearanceDependingOnState();
-        //   this.usageAnalytics.logSearchEvent<IAnalyticsFacetSliderChangeMeta>(analyticsActionCauseList.facetRangeSlider, {
-        //     facetId: this.options.id,
-        //     facetField: this.options.field.toString(),
-        //     facetRangeStart: this.startOfSlider.toString(),
-        //     facetRangeEnd: this.endOfSlider.toString()
-        //   });
-        //   this.queryController.executeQuery();
-        // }
+
+        let facetMin = Coveo.get(<HTMLElement>this.element.querySelector('#Min' + this.cleanedMinField), FacetSlider) as FacetSlider;
+        let facetMax = Coveo.get(<HTMLElement>this.element.querySelector('#Max' + this.cleanedMaxField), FacetSlider) as FacetSlider;
+
+        facetMin.setSelectedValues([0, values[1]]);
+        facetMax.setSelectedValues([values[0], 15000]);
+
+        this.usageAnalytics.logSearchEvent(analyticsActionCauseList.facetRangeSlider, {
+            facetId: this.options.id,
+            facetRangeStart: this.startOfSlider.toString(),
+            facetRangeEnd: this.endOfSlider.toString()
+        });
+        this.queryController.executeQuery();
     }
 
     private handleDuringSlide(args: IDuringSlideEventArgs) {
@@ -257,26 +278,30 @@ export class DualFieldFacetSlider extends Component {
     public buildHiddenMinMaxSlider() {
         const elem = $$('div');
         let optionsMin = {
-            id: 'Min'+this.cleanedMinField,
-            title: 'Min'+this.cleanedMinField,
+            id: 'Min' + this.cleanedMinField,
+            title: 'Min' + this.cleanedMinField,
             field: this.options.fieldMin,
             start: 0,
             end: 15000,
             rangeSlider: true
         }
         this.HiddenMinSlider = new Coveo.FacetSlider(elem.el, optionsMin, this.bindings);
+        elem.el.id = 'Min' + this.cleanedMinField;
+        elem.el.style.display = 'none';
         this.element.append(this.HiddenMinSlider.element);
 
         const elem2 = $$('div');
         let optionsMax = {
-            id: 'Max'+this.cleanedMaxField,
-            title: 'Max'+this.cleanedMaxField,
+            id: 'Max' + this.cleanedMaxField,
+            title: 'Max' + this.cleanedMaxField,
             field: this.options.fieldMax,
             start: 0,
             end: 15000,
             rangeSlider: true
         }
         this.HiddenMaxSlider = new Coveo.FacetSlider(elem2.el, optionsMax, this.bindings);
+        elem2.el.id = 'Max' + this.cleanedMaxField;
+        elem2.el.style.display = 'none';
         this.element.append(this.HiddenMaxSlider.element);
     }
 
@@ -340,7 +365,6 @@ class Slider {
         }
 
         if (this.options.steps || this.options.getSteps) {
-            debugger
             this.buildSteps();
         }
 
@@ -378,6 +402,9 @@ class Slider {
     }
 
     public initializeState(values: number[] = [this.options.start, this.options.end]) {
+        if (values[0] == undefined || values[1] == undefined) {
+            values = [this.options.start, this.options.end];
+        }
         this.currentValues = values;
         if (this.options.rangeSlider) {
             this.sliderRange.initializeSliderRangeState(values);
@@ -881,7 +908,6 @@ class FacetHeader {
         });
 
         if (this.options.facet) {
-            // this.operatorElement = this.buildOperatorToggle();
             settingsSection.append(this.operatorElement);
             $$(this.operatorElement).toggle(this.options.facet.options.enableTogglingOperator);
         }
@@ -933,27 +959,6 @@ class FacetHeader {
         this.iconElement = document.createElement('div');
         $$(this.iconElement).addClass(cssClassForIcon);
         return this.iconElement;
-    }
-
-    private handleOperatorClick(): void {
-        if (this.options.facet.options.useAnd) {
-            this.options.facet.switchToOr();
-        } else {
-            this.options.facet.switchToAnd();
-        }
-        if (this.options.facet.getSelectedValues().length != 0) {
-            const operatorNow = this.options.facet.options.useAnd ? 'AND' : 'OR';
-            const operatorBefore = this.options.facet.options.useAnd ? 'OR' : 'AND';
-            this.options.facet.triggerNewQuery(() =>
-                this.options.facet.usageAnalytics.logSearchEvent<IAnalyticsFacetOperatorMeta>(analyticsActionCauseList.facetToggle, {
-                    facetId: this.options.facet.options.id,
-                    facetField: this.options.field.toString(),
-                    facetOperatorBefore: operatorBefore,
-                    facetOperatorAfter: operatorNow,
-                    facetTitle: this.options.title
-                })
-            );
-        }
     }
 
     private buildTitle(): HTMLElement {

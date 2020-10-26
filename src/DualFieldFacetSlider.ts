@@ -12,21 +12,17 @@ import {
     ComponentOptions,
     FacetSlider,
     QueryEvents,
-    ResponsiveFacetSlider,
     Defer,
-    Win,
-    Utils,
     SliderEvents,
-    IGraphValueSelectedArgs,
-    AnalyticsEvents,
     DeviceUtils,
-    BreadcrumbEvents,
-    IPopulateBreadcrumbEventArgs,
-    FacetHeader,
     IPreprocessResultsEventArgs,
-    INewQueryEventArgs,
-    IChangeAnalyticsCustomDataEventArgs,
     $$,
+    FacetSettings,
+    FacetSort,
+    IFacetHeaderOptions,
+    IAnalyticsFacetOperatorMeta,
+    analyticsActionCauseList,
+    l,
 } from 'coveo-search-ui';
 // import { lazyComponent } from '@coveops/turbo-core';
 
@@ -39,6 +35,8 @@ export interface IDualFieldFacetSliderOptions {
     delay?: number;
     valueCaption?: any;
     rounded?: number;
+    start?: number;
+    end?: number;
 }
 
 export interface IStartSlideEventArgs {
@@ -148,19 +146,40 @@ export class DualFieldFacetSlider extends Component {
         Coveo.load('FacetSlider').then(
             (arg) => {
                 Coveo.FacetSlider = arg as any;
-                this.buildMinMaxSlider();
-                // this.bindBreadcrumbEvents();
                 this.buildDualSlider();
-                this.buildSlider();
             })
     }
 
+    public buildDualSlider() {
+        this.element.classList.add('CoveoFacetSlider');
+
+        this.buildHeader();
+        this.buildSlider();
+
+        this.buildHiddenMinMaxSlider();
+
+    }
+
+    public buildHeader() {
+        this.facetHeader = new FacetHeader({
+            field: <string>this.options.fieldMin,
+            facetElement: this.element,
+            title: this.options.title,
+            enableClearElement: true,
+            enableCollapseElement: true,
+            // facetSlider: this.slider
+        });
+
+        this.element.append(this.facetHeader.build());
+    }
+
     private buildSlider() {
-        const sliderContainer = $$('div', {
-            className: 'coveo-slider-container'
-        }).el;
+        const sliderContainer = $$('div', { className: 'coveo-slider-container' }).el;
 
         const sliderDiv = $$('div').el;
+
+        this.options.start = 0;
+        this.options.end = 15000;
 
         this.slider = this.slider
             ? this.slider
@@ -235,13 +254,11 @@ export class DualFieldFacetSlider extends Component {
         });
     }
 
-
-
-    public buildMinMaxSlider() {
+    public buildHiddenMinMaxSlider() {
         const elem = $$('div');
         let optionsMin = {
-            id: 'MinHiddenFacet',
-            title: 'MinHiddenFacet',
+            id: 'Min'+this.cleanedMinField,
+            title: 'Min'+this.cleanedMinField,
             field: this.options.fieldMin,
             start: 0,
             end: 15000,
@@ -252,8 +269,8 @@ export class DualFieldFacetSlider extends Component {
 
         const elem2 = $$('div');
         let optionsMax = {
-            id: 'MaxHiddenFacet',
-            title: 'MaxHiddenFacet',
+            id: 'Max'+this.cleanedMaxField,
+            title: 'Max'+this.cleanedMaxField,
             field: this.options.fieldMax,
             start: 0,
             end: 15000,
@@ -305,47 +322,26 @@ export class DualFieldFacetSlider extends Component {
         }, this.options.delay);
     }
 
-    public buildDualSlider() {
-        const elem = $$('div', { class: 'coveo-facet-header-title' }, this.options.title);
-        // this.facetHeader = new FacetHeader({
-        //     field: <string>this.options.fieldMin,
-        //     facetElement: this.element,
-        //     title: this.options.title,
-        //     enableClearElement: true,
-        //     enableCollapseElement: true,
-        //     // facetSlider: this.slider
-        // });
-        // elem.el.append(this.facetHeader.build());
-        debugger
-        this.element.append(elem.el);
-    }
+
 }
 
-export class Slider {
+class Slider {
     public steps: number[] = [];
     public currentValues: number[];
     private sliderButton: SliderButton;
     private sliderRange: SliderRange;
     private sliderLine: SliderLine;
     private sliderCaption: SliderCaption;
-    private sliderGraph: SliderGraph;
 
     constructor(public element: HTMLElement, public options: ISliderOptions, public root: HTMLElement) {
-        if (this.options.dateField) {
-            this.options.start = new Date(this.options.start).getTime();
-            this.options.end = new Date(this.options.end).getTime();
-        }
 
         if (this.options.rounded == undefined) {
             this.options.rounded = 0;
         }
 
         if (this.options.steps || this.options.getSteps) {
+            debugger
             this.buildSteps();
-        }
-
-        if (this.options.graph) {
-            this.sliderGraph = new SliderGraph(this);
         }
 
         this.sliderLine = new SliderLine(this);
@@ -377,9 +373,6 @@ export class Slider {
         } else {
             this.setButtonBoundary();
             this.sliderLine.setActiveWidth(this.sliderButton);
-        }
-        if (this.options.graph) {
-            this.sliderGraph.draw();
         }
         this.displayCaption();
     }
@@ -453,12 +446,6 @@ export class Slider {
         this.displayCaption();
     }
 
-    public drawGraph(data?: ISliderGraphData[]) {
-        if (this.sliderGraph) {
-            this.sliderGraph.draw(data);
-        }
-    }
-
     private setButtonBoundary() {
         this.sliderButton.leftBoundary = 0;
         this.sliderButton.rightBoundary = this.element.clientWidth;
@@ -530,10 +517,7 @@ class SliderLine {
     }
 }
 
-// This component relies heavily on mouse interaction, really difficult to test inside a UT context.
-// Ignore it
-/* istanbul ignore next */
-export class SliderButton {
+class SliderButton {
     public leftBoundary: number;
     public rightBoundary: number;
     public element: HTMLElement;
@@ -865,267 +849,122 @@ class SliderCaption {
     }
 }
 
-class SliderGraph {
-    private svg: any;
-    private x: any;
-    private y: any;
-    private oldData: ISliderGraphData[];
-    private tooltip: HTMLElement;
-    private tooltipArrow: HTMLElement;
-    private tooltipCount: HTMLElement;
-    private tooltipCaption: HTMLElement;
+class FacetHeader {
+    public element: HTMLElement;
+    public iconElement: HTMLElement;
+    public waitElement: HTMLElement;
+    public collapseElement: HTMLElement;
+    public expandElement: HTMLElement;
+    public operatorElement: HTMLElement;
+    public eraserElement: HTMLElement;
+    public settings: FacetSettings;
+    public sort: FacetSort;
 
-    constructor(public slider: Slider) {
-        this.svg = d3select(slider.element)
-            .append('svg')
-            .append('g');
-        this.x = scaleBand();
-        this.y = scaleLinear();
-        this.slider.options.graph.margin = Utils.extendDeep(
-            {
-                top: 20,
-                right: 0,
-                left: 0,
-                bottom: 20
-            },
-            this.slider.options.graph.margin || {}
-        );
-        this.slider.options.graph.animationDuration = this.slider.options.graph.animationDuration || 500;
-        this.slider.options.graph.steps = this.slider.options.graph.steps || 10;
-
-        this.buildTooltip();
+    constructor(public options: IFacetHeaderOptions) {
+        this.element = document.createElement('div');
+        $$(this.element).addClass('coveo-facet-header');
     }
 
-    public draw(data: ISliderGraphData[] = this.oldData) {
-        if (data) {
-            if (data != this.oldData) {
-                // only modify the data if it's new
-                data = this.modifyPossibleSinglePointDataIntoValidRange(data);
-            }
-            const sliderOuterWidth = this.slider.element.offsetWidth;
-            const sliderOuterHeight = this.slider.element.offsetHeight;
-            const width = sliderOuterWidth - this.slider.options.graph.margin.left - this.slider.options.graph.margin.right;
-            const height = sliderOuterHeight - this.slider.options.graph.margin.top - this.slider.options.graph.margin.bottom;
-            if (!isNaN(width) && width >= 0 && !isNaN(height) && height >= 0) {
-                this.applyTransformOnSvg(width, height);
-                this.setXAndYRange(width, height);
-                this.setXAndYDomain(data);
-
-                const bars = this.svg.selectAll('.coveo-bar').data(data);
-                const currentSliderValues = this.slider.getValues();
-                this.renderGraphBars(bars, width, height, currentSliderValues);
-                this.setGraphBarsTransition(bars, height, currentSliderValues);
-            }
-
-            this.oldData = data;
-        }
-    }
-
-    private buildTooltip() {
-        this.tooltip = $$('div', {
-            className: 'coveo-slider-tooltip'
-        }).el;
-
-        this.tooltipArrow = $$('div', {
-            className: 'coveo-slider-tooltip-arrow'
-        }).el;
-
-        this.tooltipCaption = $$('span', {
-            className: 'coveo-caption'
-        }).el;
-
-        this.tooltipCount = $$('span', {
-            className: 'coveo-count'
-        }).el;
-
-        $$(this.tooltip).append(this.tooltipArrow);
-        $$(this.tooltip).append(this.tooltipCaption);
-        $$(this.tooltip).append(this.tooltipCount);
-        $$(this.tooltip).hide();
-        $$(this.slider.element).append(this.tooltip);
-    }
-
-    private modifyPossibleSinglePointDataIntoValidRange(data: ISliderGraphData[]) {
-        return map(data, (d: ISliderGraphData) => {
-            // In some rare corner case, the index can return range values where the start of the data is equal to the end of the data
-            // Since it's a "point" as opposed to a real range, it's impossible to display this properly on a graph (where the range is the x axis)
-            // An element in a graph with with 0 width on the x axis is illogical and cannot work.
-            // In those case, we must "widen" the x range. Instead of adding an arbitrary value (like +1 to end, for example), we need something that won't make the range super small to click on.
-            // We use the total width available, and subtract half a step at the beginning, and add half a step at the end
-            if (d.start == d.end) {
-                const oneStep = (this.slider.options.end - this.slider.options.start) / this.slider.options.graph.steps;
-                d.start = Math.round(d.start - oneStep / 2);
-                d.end = Math.round(d.end + oneStep / 2);
-            }
-            return d;
+    public build(): HTMLElement {
+        let titleSection = $$('div', {
+            className: 'coveo-facet-header-title-section'
         });
+        if (this.options.icon != undefined) {
+            this.iconElement = this.buildIcon();
+            titleSection.append(this.iconElement);
+        }
+        titleSection.append(this.buildTitle());
+        this.element.appendChild(titleSection.el);
+
+        let settingsSection = $$('div', {
+            className: 'coveo-facet-header-settings-section'
+        });
+
+        if (this.options.facet) {
+            // this.operatorElement = this.buildOperatorToggle();
+            settingsSection.append(this.operatorElement);
+            $$(this.operatorElement).toggle(this.options.facet.options.enableTogglingOperator);
+        }
+
+        if (this.options.settingsKlass) {
+            this.sort = this.settings = new this.options.settingsKlass(this.options.availableSorts, this.options.facet);
+            settingsSection.append(this.settings.build());
+        } else if (this.options.sortKlass) {
+            this.sort = new this.options.sortKlass(this.options.availableSorts, this.options.facet);
+        }
+        this.element.appendChild(settingsSection.el);
+
+        return this.element;
     }
 
-    private setXAndYRange(width: number, height: number) {
-        this.x.range([0, width]);
-        this.x.padding(0.2);
-        this.y.range([height - this.slider.options.graph.margin.top, 0]);
+    public collapseFacet(): void {
+        if (this.collapseElement && this.expandElement) {
+            $$(this.collapseElement).hide();
+            $$(this.expandElement).show();
+        }
+        $$(this.options.facetElement).addClass('coveo-facet-collapsed');
     }
 
-    private setXAndYDomain(data: ISliderGraphData[]) {
-        this.padGraphWithEmptyData(data);
-        this.x.domain(
-            map(data, d => {
-                return d.start;
-            })
-        );
-        this.y.domain([
-            0,
-            d3max(data, d => {
-                return d.y;
-            })
-        ]);
+    public expandFacet(): void {
+        if (this.collapseElement && this.expandElement) {
+            $$(this.expandElement).hide();
+            $$(this.collapseElement).show();
+        }
+        $$(this.options.facetElement).removeClass('coveo-facet-collapsed');
     }
 
-    private calculateOneStepOfGraph(data: ISliderGraphData[]) {
-        const oneStep = Math.abs(data[0].end - data[0].start);
-        return oneStep || 1;
-    }
-
-    private padGraphWithEmptyData(data: ISliderGraphData[]) {
-        const oneStepOfGraph = this.calculateOneStepOfGraph(data);
-        this.padBeginningOfGraphWithEmptyData(data, oneStepOfGraph);
-        this.padEndOfGraphWithEmptyData(data, oneStepOfGraph);
-    }
-
-    private padBeginningOfGraphWithEmptyData(data: ISliderGraphData[], oneStepOfGraph: number) {
-        if (data[0].start > this.slider.options.start && data[0].start > oneStepOfGraph) {
-            const difToFillAtStart = data[0].start - this.slider.options.start;
-            const nbOfStepsAtStart = Math.min(MAX_NUMBER_OF_STEPS, Math.round(difToFillAtStart / oneStepOfGraph));
-            let currentStep = data[0].start;
-            for (let i = nbOfStepsAtStart; i > 0; i--) {
-                data.unshift(<ISliderGraphData>{ start: currentStep - oneStepOfGraph, end: currentStep, y: 0 });
-                currentStep -= oneStepOfGraph;
+    public updateOperatorQueryStateModel(): void {
+        if (this.options.facet && this.options.facet.options.enableTogglingOperator) {
+            let valueToSet = '';
+            if (this.options.facet.getSelectedValues().length != 0 || this.options.facet.getExcludedValues().length != 0) {
+                valueToSet = this.options.facet.options.useAnd ? 'and' : 'or';
             }
+            this.options.facet.queryStateModel.set(this.options.facet.operatorAttributeId, valueToSet);
         }
     }
 
-    private padEndOfGraphWithEmptyData(data: ISliderGraphData[], oneStepOfGraph: number) {
-        const lastDataIndex = data.length - 1;
-        if (data[lastDataIndex].end < this.slider.options.end) {
-            const diffToFillAtEnd = this.slider.options.end - data[lastDataIndex].end;
-            const nbOfStepsAtEnd = Math.min(MAX_NUMBER_OF_STEPS, Math.round(diffToFillAtEnd / oneStepOfGraph));
-            let currentStep = data[lastDataIndex].end;
-            for (let i = 0; i < nbOfStepsAtEnd; i++) {
-                data.push(<ISliderGraphData>{ start: currentStep, end: currentStep + oneStepOfGraph, y: 0 });
-                currentStep += oneStepOfGraph;
-            }
-        }
-    }
-
-    private applyTransformOnSvg(width: number, height: number) {
-        const svg = $$(this.slider.element).find('svg');
-        svg.setAttribute('width', width + 'px');
-        svg.setAttribute('height', height + 'px');
-        this.svg.attr('transform', 'translate(' + this.slider.options.graph.margin.left + ',' + this.slider.options.graph.margin.top + ')');
-    }
-
-    private renderGraphBars(bars: d3.selection.Update<ISliderGraphData>, width: number, height: number, currentSliderValues: number[]) {
-        bars
-            .enter()
-            .append('rect')
-            .attr('class', this.getFunctionForClass(currentSliderValues))
-            .attr('width', this.x.bandwidth())
-            .attr('height', this.getFunctionForHeight(height))
-            .attr('x', this.getFunctionForX())
-            .attr('y', this.getFunctionForY())
-            .on('click', this.getFunctionForClick())
-            .on('mouseover', this.getFunctionForMouseOver(height))
-            .on('mouseout', this.getFunctionForMouseOut());
-    }
-
-    private setGraphBarsTransition(bars: d3.Transition<ISliderGraphData>, height: number, currentSliderValues: number[]) {
-        bars
-            .transition()
-            .attr('x', this.getFunctionForX())
-            .attr('width', this.x.bandwidth())
-            .attr('class', this.getFunctionForClass(currentSliderValues))
-            .transition()
-            .duration(this.slider.options.graph.animationDuration)
-            .attr('y', this.getFunctionForY())
-            .attr('height', this.getFunctionForHeight(height));
-    }
-
-    private getBarClass(currentSliderValues: number[], d: ISliderGraphData, i: number) {
-        if (d.start >= currentSliderValues[0] && d.end <= currentSliderValues[1]) {
-            return 'coveo-active';
-        } else if (currentSliderValues[0] == this.slider.options.start && i == 0) {
-            return 'coveo-active';
-        } else if (currentSliderValues[1] == this.slider.options.end && i == this.slider.options.graph.steps - 1) {
-            return 'coveo-active';
+    private buildIcon(): HTMLElement {
+        let cssClassForIcon;
+        if (this.options.icon) {
+            cssClassForIcon = 'coveo-icon-custom ' + this.options.icon;
         } else {
-            return '';
+            cssClassForIcon = 'coveo-icon ' + this.options.field.substr(1);
+        }
+        this.iconElement = document.createElement('div');
+        $$(this.iconElement).addClass(cssClassForIcon);
+        return this.iconElement;
+    }
+
+    private handleOperatorClick(): void {
+        if (this.options.facet.options.useAnd) {
+            this.options.facet.switchToOr();
+        } else {
+            this.options.facet.switchToAnd();
+        }
+        if (this.options.facet.getSelectedValues().length != 0) {
+            const operatorNow = this.options.facet.options.useAnd ? 'AND' : 'OR';
+            const operatorBefore = this.options.facet.options.useAnd ? 'OR' : 'AND';
+            this.options.facet.triggerNewQuery(() =>
+                this.options.facet.usageAnalytics.logSearchEvent<IAnalyticsFacetOperatorMeta>(analyticsActionCauseList.facetToggle, {
+                    facetId: this.options.facet.options.id,
+                    facetField: this.options.field.toString(),
+                    facetOperatorBefore: operatorBefore,
+                    facetOperatorAfter: operatorNow,
+                    facetTitle: this.options.title
+                })
+            );
         }
     }
 
-    private setTooltip(d: ISliderGraphData, height: number) {
-        $$(this.tooltipCaption).text(this.slider.getCaptionFromValue([d.start, d.end]));
-        $$(this.tooltipCount).text(d.y.toString());
-        $$(this.tooltip).show();
-
-        // rolled a dice and got those numbers
-        const arbitraryOffsetForTooltip = 50;
-        const arbitraryOffsetForScrollbar = 20;
-        const tooltipArrowSize = 5;
-
-        const leftPositionForCurrentBand = this.x(d.start) - arbitraryOffsetForTooltip;
-        const halfOfBandwidth = this.x.bandwidth() / 2;
-        const tooltipArrowOffset = arbitraryOffsetForTooltip + halfOfBandwidth - tooltipArrowSize;
-
-        this.tooltip.style.left = `${leftPositionForCurrentBand}px`;
-        this.tooltip.style.top = `${this.y(d.y) - height}px`;
-        this.tooltipArrow.style.left = `${tooltipArrowOffset}px`;
-
-        const tooltipRect = this.tooltip.getBoundingClientRect();
-        const windowWidth = new Win(window).width();
-
-        const tooltipOverflowsRightOfWindow = tooltipRect.right > windowWidth - arbitraryOffsetForScrollbar;
-
-        if (tooltipOverflowsRightOfWindow) {
-            const offsetToPreventWindowOverflow = windowWidth - tooltipRect.right - arbitraryOffsetForScrollbar;
-            this.tooltip.style.left = `${leftPositionForCurrentBand + offsetToPreventWindowOverflow}px`;
-            this.tooltipArrow.style.left = `${tooltipArrowOffset - offsetToPreventWindowOverflow}px`;
-        }
+    private buildTitle(): HTMLElement {
+        const title = $$('div', { className: 'coveo-facet-header-title' });
+        title.text(this.options.title);
+        title.setAttribute('role', 'heading');
+        title.setAttribute('aria-level', '2');
+        title.setAttribute('aria-label', `${l('FacetTitle', this.options.title)}.`);
+        return title.el;
     }
 
-    private getFunctionForX() {
-        return (d: ISliderGraphData) => this.x(d.start);
-    }
-
-    private getFunctionForY() {
-        return (d: ISliderGraphData) => this.y(d.y);
-    }
-
-    private getFunctionForHeight(height: number) {
-        return (d: ISliderGraphData) => height - this.y(d.y);
-    }
-
-    private getFunctionForClass(currentSliderValues: number[]) {
-        return (d, i) => `coveo-bar ${this.getBarClass(currentSliderValues, d, i)}`;
-    }
-
-    private getFunctionForClick() {
-        return (d: ISliderGraphData, i) => {
-            $$(this.slider.element).trigger(SliderEvents.graphValueSelected, <IGraphValueSelectedArgs>{
-                start: d.start,
-                end: d.end,
-                value: d.y
-            });
-        };
-    }
-
-    private getFunctionForMouseOver(height: number) {
-        return (d: ISliderGraphData) => this.setTooltip(d, height);
-    }
-
-    private getFunctionForMouseOut() {
-        return () => $$(this.tooltip).hide();
-    }
 }
 
 Initialization.registerAutoCreateComponent(DualFieldFacetSlider);

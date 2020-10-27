@@ -1,6 +1,6 @@
 {
     "name": "@coveops/dual-field-facet-slider",
-    "version": "1.0.2",
+    "version": "1.1.1",
     "description": "Slider that works with 2 fields from the coveo index",
     "main": "dist/index.js",
     "scripts": {

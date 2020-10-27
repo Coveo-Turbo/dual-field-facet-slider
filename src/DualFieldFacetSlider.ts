@@ -1,8 +1,5 @@
-// Version 1.1.1
+// Version 1.1.2
 
-// import { max as d3max, select as d3select } from 'd3';
-// import { scaleBand, scaleLinear } from 'd3-scale';
-// import * as Globalize from 'globalize';
 import { each, indexOf, map, min } from 'underscore';
 
 import {
@@ -20,7 +17,6 @@ import {
     FacetSettings,
     FacetSort,
     IFacetHeaderOptions,
-    // IAnalyticsFacetOperatorMeta,
     analyticsActionCauseList,
     l,
     IBuildingQueryEventArgs,
@@ -159,14 +155,11 @@ export class DualFieldFacetSlider extends Component {
 
         this.buildHeader();
 
-        // this.initSlider();
-
         this.buildHiddenMinMaxSlider();
 
     }
 
     public initSlider() {
-        // this.buildSlider();
         this.slider.initializeState([this.startOfSlider, this.endOfSlider]);
         this.updateAppearanceDependingOnState();
     }
@@ -177,8 +170,7 @@ export class DualFieldFacetSlider extends Component {
             facetElement: this.element,
             title: this.options.title,
             enableClearElement: true,
-            enableCollapseElement: true,
-            // facetSlider: this.slider
+            enableCollapseElement: true
         });
 
         this.element.append(this.facetHeader.build());
@@ -224,6 +216,7 @@ export class DualFieldFacetSlider extends Component {
         let facetMax = Coveo.get(<HTMLElement>this.element.querySelector('#Max' + this.cleanedMaxField), FacetSlider) as FacetSlider;
 
         if (args.slider.options.start == this.startOfSlider && args.slider.options.end == this.endOfSlider) {
+            
             facetMin.reset();
             facetMax.reset();
             this.isActive = false;
@@ -231,7 +224,9 @@ export class DualFieldFacetSlider extends Component {
             this.isActive = true;
 
             facetMin.setSelectedValues([0, values[1]]);
+            facetMin['updateQueryState']();
             facetMax.setSelectedValues([values[0], 20000]);
+            facetMax['updateQueryState']();
         }
 
         this.usageAnalytics.logSearchEvent(analyticsActionCauseList.facetRangeSlider, {

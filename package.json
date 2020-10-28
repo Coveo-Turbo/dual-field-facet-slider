@@ -1,6 +1,6 @@
 {
     "name": "@coveops/dual-field-facet-slider",
-    "version": "1.1.2",
+    "version": "1.1.5",
     "description": "Slider that works with 2 fields from the coveo index",
     "main": "dist/index.js",
     "scripts": {
@@ -20,9 +20,11 @@
     "dependencies": {
         "@coveops/localization-manager": "^1.0.0",
         "@coveops/turbo-core": "^1.1.1",
-        "coveo-search-ui": "^2.9856.8"
+        "coveo-search-ui": "^2.9856.8",
+        "svg-inline-loader": "^0.8.0"
     },
     "devDependencies": {
-        "@coveops/cli": "^0.13.2"
+        "@coveops/cli": "^0.13.2",
+        "svg-inline-loader": "^0.8.0"
     }
 }

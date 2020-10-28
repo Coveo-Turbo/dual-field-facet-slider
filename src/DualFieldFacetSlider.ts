@@ -1,4 +1,4 @@
-// Version 1.1.2
+// Version 1.1.5
 
 import { each, indexOf, map, min } from 'underscore';
 
@@ -21,6 +21,11 @@ import {
     l,
     IBuildingQueryEventArgs,
     IDoneBuildingQueryEventArgs,
+    BreadcrumbEvents,
+    IPopulateBreadcrumbEventArgs,
+    IBreadcrumbItem,
+    IAnalyticsFacetMeta,
+    IStringMap
 } from 'coveo-search-ui';
 // import { lazyComponent } from '@coveops/turbo-core';
 
@@ -30,7 +35,6 @@ export interface IDualFieldFacetSliderOptions {
     title?: string;
     id: string;
     rangeSlider?: boolean;
-    delay?: number;
     valueCaption?: any;
     rounded?: number;
     start?: number;
@@ -95,6 +99,9 @@ export interface ISliderOptions {
 
 export const MAX_NUMBER_OF_STEPS = 100;
 
+declare const require: (svgPath: string) => string;
+const SVGIcon = require('./clear.svg');
+
 // @lazyComponent
 export class DualFieldFacetSlider extends Component {
     static ID = 'DualFieldFacetSlider';
@@ -123,7 +130,6 @@ export class DualFieldFacetSlider extends Component {
         title: ComponentOptions.buildStringOption({ defaultValue: "DualFieldFacetSlider" }),
         id: ComponentOptions.buildStringOption({ defaultValue: "DualFieldFacetSlider" }),
         rangeSlider: ComponentOptions.buildBooleanOption({ defaultValue: true }),
-        delay: ComponentOptions.buildNumberOption({ defaultValue: 200 }),
         rounded: ComponentOptions.buildNumberOption({ defaultValue: 0 }),
         valueCaption: ComponentOptions.buildCustomOption<(values: number[]) => string>(() => {
             return null;
@@ -137,11 +143,10 @@ export class DualFieldFacetSlider extends Component {
         this.cleanedMinField = this.options.fieldMin.replace('@', '');
         this.cleanedMaxField = this.options.fieldMax.replace('@', '');
 
-        this.isActive = false;
-
         this.bind.onRootElement(QueryEvents.preprocessResults, (args: IPreprocessResultsEventArgs) => this.handlePreprocessResults(args));
         this.bind.onRootElement(QueryEvents.buildingQuery, (args: IBuildingQueryEventArgs) => this.handleBuildingQuery(args));
         this.bind.onRootElement(QueryEvents.doneBuildingQuery, (args: IDoneBuildingQueryEventArgs) => this.handleDoneBuildingQuery(args));
+        this.bindBreadcrumbEvents();
 
         Coveo.load('FacetSlider').then(
             (arg) => {
@@ -152,11 +157,8 @@ export class DualFieldFacetSlider extends Component {
 
     public buildDualSlider() {
         this.element.classList.add('CoveoFacetSlider');
-
         this.buildHeader();
-
         this.buildHiddenMinMaxSlider();
-
     }
 
     public initSlider() {
@@ -216,16 +218,14 @@ export class DualFieldFacetSlider extends Component {
         let facetMax = Coveo.get(<HTMLElement>this.element.querySelector('#Max' + this.cleanedMaxField), FacetSlider) as FacetSlider;
 
         if (args.slider.options.start == this.startOfSlider && args.slider.options.end == this.endOfSlider) {
-            
             facetMin.reset();
             facetMax.reset();
             this.isActive = false;
         } else {
             this.isActive = true;
-
             facetMin.setSelectedValues([0, values[1]]);
+            facetMax.setSelectedValues([values[0], 10000000]);
             facetMin['updateQueryState']();
-            facetMax.setSelectedValues([values[0], 20000]);
             facetMax['updateQueryState']();
         }
 
@@ -236,6 +236,79 @@ export class DualFieldFacetSlider extends Component {
         });
         this.queryController.executeQuery();
 
+    }
+
+    private bindBreadcrumbEvents() {
+        this.bind.onRootElement(BreadcrumbEvents.clearBreadcrumb, () => this.reset());
+        this.bind.onRootElement(BreadcrumbEvents.populateBreadcrumb, (args: IPopulateBreadcrumbEventArgs) =>
+            this.handlePopulateBreadcrumb(args)
+        );
+    }
+
+    private handlePopulateBreadcrumb(args: IPopulateBreadcrumbEventArgs): void {
+        const populateBreadcrumb = () => {
+            if (this.isActive) {
+                args.breadcrumbs.push(<IBreadcrumbItem>{
+                    element: this.buildBreadcrumbFacetSlider()
+                });
+            }
+        };
+        if (this.slider) {
+            populateBreadcrumb();
+        } else {
+            $$(this.root).one(QueryEvents.deferredQuerySuccess, () => {
+                populateBreadcrumb();
+                $$(this.root).trigger(BreadcrumbEvents.redrawBreadcrumb);
+            });
+        }
+    }
+
+    private buildBreadcrumbFacetSlider(): HTMLElement {
+        const elem = $$('div', {
+            className: 'coveo-facet-slider-breadcrumb dual-field-facet-slider ' + this.options.id
+        }).el;
+
+        const title = $$('span', {
+            className: 'coveo-facet-slider-breadcrumb-title'
+        });
+        title.text(this.options.title + ': ');
+        elem.appendChild(title.el);
+
+        const values = $$('span', {
+            className: 'coveo-facet-slider-breadcrumb-values'
+        });
+        elem.appendChild(values.el);
+
+        const value = $$('span', {
+            className: 'coveo-facet-slider-breadcrumb-value'
+        });
+        const caption = $$('span', {
+            className: 'coveo-facet-slider-breadcrumb-caption'
+        });
+        caption.text(this.slider.getCaption());
+        value.append(caption.el);
+        values.el.appendChild(value.el);
+        const clear = $$(
+            'span',
+            {
+                className: 'coveo-facet-slider-breadcrumb-clear'
+            },
+            SVGIcon
+        );
+        SVGDom.addClassToSVGInContainer(clear.el, 'coveo-facet-slider-clear-svg');
+
+        value.el.appendChild(clear.el);
+
+        value.on('click', () => {
+            this.reset();
+            this.usageAnalytics.logSearchEvent<IAnalyticsFacetMeta>(analyticsActionCauseList.facetClearAll, {
+                facetId: this.options.id,
+                facetField: this.options.fieldMin.toString(),
+                facetTitle: this.options.title
+            });
+            this.queryController.executeQuery();
+        });
+        return elem;
     }
 
     public handleDuringSlide(args: IDuringSlideEventArgs) {
@@ -276,12 +349,12 @@ export class DualFieldFacetSlider extends Component {
             title: 'Min' + this.cleanedMinField,
             field: this.options.fieldMin,
             start: 0,
-            end: 20000,
+            end: 10000000,
             rangeSlider: true
         }
         this.HiddenMinSlider = new Coveo.FacetSlider(elem.el, optionsMin, this.bindings);
         elem.el.id = 'Min' + this.cleanedMinField;
-        // elem.el.style.display = 'none';
+        elem.el.style.display = 'none';
         this.element.append(this.HiddenMinSlider.element);
 
         const elem2 = $$('div');
@@ -290,12 +363,12 @@ export class DualFieldFacetSlider extends Component {
             title: 'Max' + this.cleanedMaxField,
             field: this.options.fieldMax,
             start: 0,
-            end: 20000,
+            end: 10000000,
             rangeSlider: true
         }
         this.HiddenMaxSlider = new Coveo.FacetSlider(elem2.el, optionsMax, this.bindings);
         elem2.el.id = 'Max' + this.cleanedMaxField;
-        // elem2.el.style.display = 'none';
+        elem2.el.style.display = 'none';
         this.element.append(this.HiddenMaxSlider.element);
     }
 
@@ -321,68 +394,51 @@ export class DualFieldFacetSlider extends Component {
             "maximumNumberOfValues": 1
         });
     }
-    public handleDoneBuildingQuery(args: IDoneBuildingQueryEventArgs) {
-        // if (!this.isActive) {
-        //     let ex = _.filter(args.queryBuilder.advancedExpression.getParts(), (item) => {
-        //         if (item.indexOf(this.cleanedMinField) == -1) {
-        //             return item
-        //         }
-        //     });
-        //     let ex2 = _.filter(ex, (item) => {
-        //         if (item.indexOf(this.cleanedMaxField) == -1) {
-        //             return item
-        //         }
-        //     });
-        //     args.queryBuilder.advancedExpression['parts'] = ex2;
-        // }
 
+    public handleDoneBuildingQuery(args: IDoneBuildingQueryEventArgs) {
+        args.queryBuilder.advancedExpression['parts'].forEach((part, index, theArray) => {
+            if (part.indexOf(this.cleanedMinField) != -1) {
+                let valueToReplace = part.split('==')[1].split('..')[1];
+                theArray[index] = part.replace(valueToReplace, parseInt(valueToReplace));
+            }
+
+            if (part.indexOf(this.cleanedMaxField) != -1) {
+                let valueToReplace = part.split('==')[1].split('..')[0];
+                theArray[index] = part.replace(valueToReplace, parseInt(valueToReplace));
+            }
+        });
     }
 
     public handlePreprocessResults(args: IPreprocessResultsEventArgs) {
 
-        // let currentMin = _.min(args.results.results, (item) => { return item.raw[this.cleanedField]; }).raw[this.cleanedField];
-        // let currentMax = _.max(args.results.results, (item) => { return item.raw[this.cleanedField]; }).raw[this.cleanedField];
         let value = _.filter(args.results.groupByResults, (item) => { return item.globalComputedFieldResults.length > 0 });
-
-        let itemMin = _.filter(value, (item) => { return item.field == this.cleanedMinField })[0];
-        let itemMax = _.filter(value, (item) => { return item.field == this.cleanedMaxField })[0];
-
-        let currentMin = itemMin['GlobalComputedFieldResults'][0];
-        let currentMax = itemMax['GlobalComputedFieldResults'][0];
-
-        if (!this.isActive) {
-            if (this.element.querySelector('.coveo-slider-container')) {
-                delete this.slider;
-                this.element.lastElementChild.remove();
+        if (value.length > 0){
+            let itemMin = _.filter(value, (item) => { return item.field == this.cleanedMinField })[0];
+            let itemMax = _.filter(value, (item) => { return item.field == this.cleanedMaxField })[0];
+    
+            let currentMin = itemMin['GlobalComputedFieldResults'][0];
+            let currentMax = itemMax['GlobalComputedFieldResults'][0];
+    
+            if (currentMin == currentMax && !this.isActive) {
+                this.element.style.display = 'none';
+            } else {
+                this.element.style.display = 'block';
+                if (!this.isActive) {
+                    if (this.element.querySelector('.coveo-slider-container')) {
+                        delete this.slider;
+                        this.element.lastElementChild.remove();
+                    }
+                    this.buildSlider(currentMin, currentMax);
+                    this.slider.initializeState([currentMin, currentMax]);
+                    this.updateAppearanceDependingOnState();
+                    this.isActive = (currentMin != this.options.start || currentMax != this.options.end);
+                }
             }
-            this.buildSlider(currentMin, currentMax);
-            this.slider.initializeState([currentMin, currentMax]);
-            this.updateAppearanceDependingOnState();
-
+        }else{
+            this.element.style.display = 'none';
         }
+        
     }
-
-    // protected generateFacetDom(min: number, max: number) {
-    //     const elem = $$('div');
-    //     let options = {
-    //         id: this.options.id,
-    //         title: this.options.title,
-    //         field: this.options.fieldMin,
-    //         rangeSlider: true,
-    //         start: min,
-    //         end: max,
-    //         rounded: this.options.rounded,
-    //         valueCaption: this.options.valueCaption
-    //     }
-    //     this.dualFieldFacetSlider = new Coveo.FacetSlider(elem.el, options, this.bindings);
-    //     this.element.append(this.dualFieldFacetSlider.element);
-    //     setTimeout(() => {
-    //         this.dualFieldFacetSlider.enable()
-    //         this.dualFieldFacetSlider.element.classList.remove('coveo-disabled-empty');
-    //         this.dualFieldFacetSlider.element.classList.remove('coveo-disabled');
-    //     }, this.options.delay);
-    // }
-
 
 }
 
@@ -1005,6 +1061,37 @@ class FacetHeader {
         return title.el;
     }
 
+}
+
+class SVGDom {
+    public static addClassToSVGInContainer(svgContainer: HTMLElement, classToAdd: string) {
+        const svgElement = svgContainer.querySelector('svg');
+        svgElement.setAttribute('class', `${SVGDom.getClass(svgElement)}${classToAdd}`);
+    }
+
+    public static removeClassFromSVGInContainer(svgContainer: HTMLElement, classToRemove: string) {
+        const svgElement = svgContainer.querySelector('svg');
+        svgElement.setAttribute('class', SVGDom.getClass(svgElement).replace(classToRemove, ''));
+    }
+
+    public static addStyleToSVGInContainer(svgContainer: HTMLElement, styleToAdd: IStringMap<any>) {
+        const svgElement = svgContainer.querySelector('svg');
+        each(styleToAdd, (styleValue, styleKey) => {
+            svgElement.style[styleKey] = styleValue;
+        });
+    }
+
+    public static addAttributesToSVGInContainer(svgContainer: HTMLElement, attributesToAdd: IStringMap<string>) {
+        const svgElement = svgContainer.querySelector('svg');
+        each(attributesToAdd, (attributeValue, attributeKey) => {
+            svgElement.setAttribute(attributeKey, attributeValue);
+        });
+    }
+
+    private static getClass(svgElement: SVGElement) {
+        const className = svgElement.getAttribute('class');
+        return className ? className + ' ' : '';
+    }
 }
 
 Initialization.registerAutoCreateComponent(DualFieldFacetSlider);
